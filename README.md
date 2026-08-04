@@ -1,19 +1,5 @@
 # Cineplex "The Odyssey" IMAX 70mm date watcher — Montréal
 
-> ### ⚠️ Currently in test mode
->
-> The cutoff in `check-cineplex.mjs` is temporarily **`2026-09-15T00:00:00Z`**
-> instead of the real `2026-09-16T00:00:00Z`. That makes the date Cineplex
-> already offers (`2026-09-16T00:00:00`) count as a detection, so the full
-> alert path runs for real and you get the ten notification emails.
->
-> **To return to normal watching, both steps are required:**
-> 1. set `CUTOFF_ISO` back to `"2026-09-16T00:00:00Z"` in `check-cineplex.mjs`
-> 2. delete `.alert-state.json` from the repository
->
-> Doing only step 1 leaves the state file in place and the watcher stays quiet.
-> Doing only step 2 restarts a fresh sequence of ten test alerts.
-
 A self-contained GitHub Actions service that watches the Cineplex API for new
 bookable dates for **The Odyssey** and emails you when they appear.
 
@@ -101,7 +87,7 @@ emailed forever.
 | Film ID | `37617` (The Odyssey) |
 | Location | `9406` — Cinéma Banque Scotia Montréal |
 | Experience filter | `imax-70mm` (IMAX 70mm, 15-perf) |
-| Cutoff | `2026-09-16T00:00:00Z` (UTC) — ⚠️ **temporarily set to `2026-09-15T00:00:00Z` for testing**, see below |
+| Cutoff | `2026-09-16T00:00:00Z` (UTC) |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
 | Schedule | `7,22,37,52 * * * *` — four times an hour, UTC |
 | Alerts per detection | 10 |
@@ -445,6 +431,24 @@ You can run it during an active alert sequence and the counter will not move.
 
 If no email arrives, revisit [Step 8](#step-8--turn-on-failure-emails) and check
 your spam folder.
+
+### Test D — rehearse a real alert end to end
+
+The forced drill proves email delivery, but it deliberately skips the detection
+logic. To exercise the whole real path — API call, state file, commit, failure,
+booking link — make a date that already exists qualify:
+
+1. In `check-cineplex.mjs`, set `CUTOFF_ISO = "2026-09-15T00:00:00Z"`.
+2. Delete `.alert-state.json` if one exists.
+3. Run the workflow.
+
+`2026-09-16` is already bookable, so it now counts as a detection. You will get
+a real alert, a real `.alert-state.json` commit, and a real booking link, and
+the sequence will continue on each run until it has sent ten.
+
+**To go back to normal watching, both steps are required:** set `CUTOFF_ISO`
+back to `"2026-09-16T00:00:00Z"` *and* delete `.alert-state.json`. Doing only
+the first leaves the sequence running; doing only the second restarts it.
 
 ### Test C — confirm the schedule is live
 

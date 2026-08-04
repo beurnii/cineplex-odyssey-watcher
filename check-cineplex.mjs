@@ -35,15 +35,15 @@ import { randomUUID } from "node:crypto";
  * an alert sequence that is already in progress will just carry on and the new
  * cutoff will never be evaluated.
  *
- *   Normal value ....... "2026-09-16T00:00:00Z"
- *   Current value ...... see below
+ * 2026-09-16 is the last date currently bookable at this cinema, so the watcher
+ * stays quiet until Cineplex opens something genuinely new. Because the test is
+ * strictly greater-than, that last date does NOT count as a detection.
  *
- * >>> TEMPORARILY SET ONE DAY EARLIER FOR TESTING <<<
- * At 2026-09-15 the date Cineplex ALREADY offers (2026-09-16T00:00:00) counts
- * as a detection, which exercises the full alert path for real. Set it back to
- * "2026-09-16T00:00:00Z" and delete .alert-state.json to resume normal watching.
+ * To rehearse the alert path for real, set this one day earlier
+ * ("2026-09-15T00:00:00Z") and delete .alert-state.json - the date Cineplex
+ * already offers then qualifies, and the whole sequence runs end to end.
  */
-const CUTOFF_ISO = "2026-09-15T00:00:00Z";
+const CUTOFF_ISO = "2026-09-16T00:00:00Z";
 
 /** How many failure notifications to trigger, in total, per detection. */
 const MAX_ALERTS = 10;
