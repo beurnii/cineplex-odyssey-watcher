@@ -52,6 +52,21 @@ const MAX_ALERTS = 10;
 const FILM_ID = "37617";
 
 /**
+ * Which cinema to watch. "9406" is Cinéma Banque Scotia Montréal.
+ *
+ * Set this to an empty string ("") to watch every Cineplex location in Canada
+ * instead. Narrowing to one cinema genuinely changes the answer: nationally the
+ * film has 45 bookable dates starting 2026-08-03, but at 9406 it has 44,
+ * starting 2026-08-04. The LAST bookable date happens to be the same
+ * (2026-09-16) for both today, which is why the cutoff did not need changing.
+ *
+ * Like the experience filter, an unrecognised id fails SILENTLY: the API
+ * answers HTTP 200 with [] rather than an error. Verify any new value by
+ * opening the request URL that gets printed in the workflow log.
+ */
+const LOCATION_ID = "9406";
+
+/**
  * Experience filter passed to the API. THIS VALUE IS CASE-SENSITIVE.
  *
  * "imax-70mm" is IMAX 70mm (15-perf), which is the premium format worth
@@ -112,8 +127,9 @@ const MAX_RECURSION_DEPTH = 12;
  * WHAT THIS DOES
  * --------------
  * Asks the Cineplex public showtimes API which dates are currently bookable
- * for film 37617 ("The Odyssey") with the "70mm" experience filter, and
- * reports whether ANY bookable date is strictly later than a cutoff date.
+ * for film 37617 ("The Odyssey") in IMAX 70mm at Cinéma Banque Scotia Montréal,
+ * and reports whether ANY bookable date is strictly later than a cutoff date.
+ * All three of those - film, format and cinema - are set in SETTINGS above.
  *
  * It never sends email itself. It decides what should happen and tells the
  * GitHub Actions workflow via a step output called `mode`:
@@ -408,9 +424,14 @@ function pickBestCandidates(candidates) {
 
 /** Fetch the bookable dates and return them as an array of {value, millis}. */
 async function fetchBookableDates() {
+  // Built with URLSearchParams so every value is escaped correctly, and so an
+  // empty LOCATION_ID cleanly means "all locations" rather than sending an
+  // empty locationId= that the API would treat as no match.
+  const query = new URLSearchParams({ filmId: FILM_ID });
+  if (LOCATION_ID) query.set("locationId", LOCATION_ID);
+  if (EXPERIENCES) query.set("experiences", EXPERIENCES);
   const url =
-    "https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable" +
-    `?filmId=${encodeURIComponent(FILM_ID)}&experiences=${encodeURIComponent(EXPERIENCES)}`;
+    `https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?${query}`;
 
   // A repository VARIABLE may override the built-in public key. Empty string
   // is what an unset variable expands to, so fall back on anything falsy.
@@ -538,9 +559,12 @@ async function fetchBookableDates() {
       // loudly, because a silently mis-configured watcher is the worst
       // outcome here.
       console.log("");
-      console.log(`::warning title=Odyssey watcher::No bookable dates returned for experiences="${EXPERIENCES}". ` +
-        `That is normal once a film finishes its run, but it is also what an invalid experience filter returns. ` +
-        `The filter is case-sensitive ("IMAX" and "70MM" both return nothing). Open the request URL above to check.`);
+      console.log(`::warning title=Odyssey watcher::No bookable dates returned for ` +
+        `experiences="${EXPERIENCES}" locationId="${LOCATION_ID || "(all)"}". ` +
+        `That is normal once a film finishes its run, but it is also what an invalid experience filter ` +
+        `or an unknown locationId returns - both answer HTTP 200 with an empty list instead of an error. ` +
+        `The experience filter is case-sensitive ("IMAX" and "70MM" both return nothing). ` +
+        `Open the request URL above in a browser to check.`);
       return [];
     }
     failTechnical(
@@ -640,6 +664,7 @@ async function main() {
   console.log(`Run started (UTC): ${nowIso}`);
   console.log(`Film id:           ${FILM_ID}`);
   console.log(`Experience filter: ${EXPERIENCES}`);
+  console.log(`Location:          ${LOCATION_ID || "(all Cineplex locations)"}`);
   console.log(`Cutoff (UTC):      ${CUTOFF_ISO}`);
   console.log(`Alerts per detection: ${MAX_ALERTS}`);
   console.log("");
@@ -796,6 +821,7 @@ async function main() {
     dates: qualifyingValues,
     cutoff: CUTOFF_ISO,
     filmId: FILM_ID,
+    locationId: LOCATION_ID,
     experiences: EXPERIENCES,
     note:
       "Delete this file from the repository to reset the watcher and allow a " +

@@ -1,4 +1,4 @@
-# Cineplex "The Odyssey" 70mm date watcher
+# Cineplex "The Odyssey" IMAX 70mm date watcher — Montréal
 
 > ### ⚠️ Currently in test mode
 >
@@ -99,6 +99,7 @@ emailed forever.
 |---|---|
 | API endpoint | `https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable` |
 | Film ID | `37617` (The Odyssey) |
+| Location | `9406` — Cinéma Banque Scotia Montréal |
 | Experience filter | `imax-70mm` (IMAX 70mm, 15-perf) |
 | Cutoff | `2026-09-16T00:00:00Z` (UTC) — ⚠️ **temporarily set to `2026-09-15T00:00:00Z` for testing**, see below |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
@@ -112,17 +113,23 @@ emailed forever.
 The full request is:
 
 ```text
-https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37617&experiences=imax-70mm
+https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37617&locationId=9406&experiences=imax-70mm
 ```
 
-which currently returns a plain list of dates:
+which currently returns a plain list of 44 dates:
 
 ```json
 ["2026-08-03T00:00:00","2026-08-04T00:00:00", ... ,"2026-09-16T00:00:00"]
 ```
 
-Two observations about that response, both of which shaped the code:
+Three observations about that response, all of which shaped the code:
 
+0. **It is scoped to one cinema.** Without `locationId` the API answers for all
+   of Canada: 45 dates starting 2026-08-03. With `locationId=9406` it answers
+   for Montréal only: 44 dates starting 2026-08-04. The **last** date is
+   `2026-09-16` either way today, which is why the cutoff is the same for both.
+   An unknown `locationId` returns HTTP 200 with `[]` rather than an error, so
+   the checker warns loudly whenever the list comes back empty.
 1. **It is a bare array with no object keys at all.** An extractor that only
    trusted values found under a key named `date`/`dates` would find nothing
    here and would silently never alert. The extractor therefore accepts any
@@ -541,6 +548,29 @@ const CUTOFF_ISO = "2026-09-16T00:00:00Z";
 Keep the trailing `Z`. If you drop it, the comparison becomes dependent on the
 runner's time zone. Delete `.alert-state.json` afterwards so the new cutoff is
 actually re-evaluated.
+
+### Change the cinema, or watch all of Canada
+
+In the SETTINGS block at the top of `check-cineplex.mjs`:
+
+```javascript
+const LOCATION_ID = "9406";   // Cinéma Banque Scotia Montréal
+```
+
+Set it to `""` to watch every Cineplex location. To find another cinema's id,
+open that cinema's showtimes page on cineplex.com and read `locationId` out of
+the URL. An unknown id returns an empty list rather than an error, so check the
+request URL printed in the workflow log after changing it.
+
+### Change the format
+
+```javascript
+const EXPERIENCES = "imax-70mm";
+```
+
+`imax-70mm` is IMAX 70mm; `70mm` also matches plain 5-perf 70mm; `imax` matches
+any IMAX including digital. **Case-sensitive** — `IMAX` and `70MM` silently
+return nothing. Set to `""` for any format.
 
 ### Change how many alerts you get
 
