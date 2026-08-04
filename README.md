@@ -1,5 +1,19 @@
 # Cineplex "The Odyssey" 70mm date watcher
 
+> ### ⚠️ Currently in test mode
+>
+> The cutoff in `check-cineplex.mjs` is temporarily **`2026-09-15T00:00:00Z`**
+> instead of the real `2026-09-16T00:00:00Z`. That makes the date Cineplex
+> already offers (`2026-09-16T00:00:00`) count as a detection, so the full
+> alert path runs for real and you get the ten notification emails.
+>
+> **To return to normal watching, both steps are required:**
+> 1. set `CUTOFF_ISO` back to `"2026-09-16T00:00:00Z"` in `check-cineplex.mjs`
+> 2. delete `.alert-state.json` from the repository
+>
+> Doing only step 1 leaves the state file in place and the watcher stays quiet.
+> Doing only step 2 restarts a fresh sequence of ten test alerts.
+
 A self-contained GitHub Actions service that watches the Cineplex API for new
 bookable dates for **The Odyssey** and emails you when they appear.
 
@@ -86,7 +100,7 @@ emailed forever.
 | API endpoint | `https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable` |
 | Film ID | `37617` (The Odyssey) |
 | Experience filter | `70mm` |
-| Cutoff | `2026-09-16T00:00:00Z` (UTC) |
+| Cutoff | `2026-09-16T00:00:00Z` (UTC) — ⚠️ **temporarily set to `2026-09-15T00:00:00Z` for testing**, see below |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
 | Schedule | `7,22,37,52 * * * *` — four times an hour, UTC |
 | Alerts per detection | 10 |

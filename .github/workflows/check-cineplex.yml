@@ -157,11 +157,14 @@ jobs:
           MAX_ALERTS: ${{ steps.check.outputs.max_alerts }}
           DATES: ${{ steps.check.outputs.dates }}
           DATES_COUNT: ${{ steps.check.outputs.dates_count }}
+          # Reported by the checker rather than written here, so the cutoff can
+          # never drift out of sync with the one actually used to compare.
+          CUTOFF: ${{ steps.check.outputs.cutoff }}
         run: |
           echo "==================================================================="
           echo " CINEPLEX ODYSSEY 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
           echo "==================================================================="
-          echo "Cutoff (UTC):     2026-09-16T00:00:00Z"
+          echo "Cutoff (UTC):     ${CUTOFF}"
           echo "Qualifying dates: ${DATES}"
           echo "How many:         ${DATES_COUNT}"
           echo ""
@@ -170,7 +173,7 @@ jobs:
           echo "This workflow is now failing ON PURPOSE. That is how it emails you."
           echo "It is not a bug and nothing is broken."
           echo ""
-          echo "::error title=Cineplex Odyssey 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than 2026-09-16T00:00:00Z: ${DATES}"
+          echo "::error title=Cineplex Odyssey 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than ${CUTOFF}: ${DATES}"
           exit 1
 
       # -------------------------------------------------------------------

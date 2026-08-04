@@ -1,5 +1,90 @@
 #!/usr/bin/env node
 /**
+ * Cineplex "The Odyssey" 70mm bookable-date watcher.
+ *
+ * The settings you are most likely to change are immediately below, right at
+ * the top of this file. A full explanation of how everything works - including
+ * the subscription key and the time zone handling - is in the "HOW THIS WORKS"
+ * section further down.
+ */
+
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+
+/* ===========================================================================
+ *
+ *   S E T T I N G S
+ *
+ *   Everything you are likely to want to change lives in this one block.
+ *   Nothing below it needs editing for normal use.
+ *
+ * =========================================================================== */
+
+/**
+ * ---------------------------------------------------------------------------
+ * THE CUTOFF DATE. This is the setting you are most likely to change.
+ * ---------------------------------------------------------------------------
+ * Only bookable dates STRICTLY LATER than this instant count as a detection.
+ * A date exactly equal to it does NOT trigger an alert.
+ *
+ * ALWAYS keep the trailing "Z". It means UTC. Without it the comparison would
+ * silently depend on the time zone of whichever machine runs the check, which
+ * is a real bug rather than a nitpick - see "ABOUT TIME ZONES" further down.
+ *
+ * After changing this, delete .alert-state.json from the repository, otherwise
+ * an alert sequence that is already in progress will just carry on and the new
+ * cutoff will never be evaluated.
+ *
+ *   Normal value ....... "2026-09-16T00:00:00Z"
+ *   Current value ...... see below
+ *
+ * >>> TEMPORARILY SET ONE DAY EARLIER FOR TESTING <<<
+ * At 2026-09-15 the date Cineplex ALREADY offers (2026-09-16T00:00:00) counts
+ * as a detection, which exercises the full alert path for real. Set it back to
+ * "2026-09-16T00:00:00Z" and delete .alert-state.json to resume normal watching.
+ */
+const CUTOFF_ISO = "2026-09-15T00:00:00Z";
+
+/** How many failure notifications to trigger, in total, per detection. */
+const MAX_ALERTS = 10;
+
+/** Cineplex internal film id for "The Odyssey". */
+const FILM_ID = "37617";
+
+/** Experience filter passed to the API. */
+const EXPERIENCES = "70mm";
+
+/* ===========================================================================
+ * Internal constants - you should not normally need to touch these.
+ * =========================================================================== */
+
+/** Committed to the repository while an alert sequence is in progress. */
+const STATE_FILE = ".alert-state.json";
+
+/**
+ * Public client-side Azure APIM key (see the long note above). Overridable
+ * with a repository VARIABLE if Cineplex ever rotates it.
+ */
+const PUBLIC_SUBSCRIPTION_KEY = "dcdac5601d864addbc2675a2e96cb1f8";
+
+/* --- Logging / safety limits ------------------------------------------- */
+
+/** Error response bodies are truncated to this many characters in the log. */
+const MAX_ERROR_BODY_CHARS = 1000;
+
+/** Successful response bodies are truncated to this many characters. */
+const MAX_SUCCESS_BODY_CHARS = 4000;
+
+/** Give up on the HTTP request after this long. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Safety rail for the recursive extractor against absurdly nested JSON. */
+const MAX_RECURSION_DEPTH = 12;
+
+/* ===========================================================================
+ * HOW THIS WORKS - background reading, no settings below this point.
+ * =========================================================================== */
+/**
  * ============================================================================
  * Cineplex "The Odyssey" 70mm bookable-date watcher
  * ============================================================================
@@ -68,52 +153,6 @@
  * labels is the correct reading, and it is stable regardless of runner region.
  * ============================================================================
  */
-
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-
-/* ===========================================================================
- * CONFIGURATION - these are the values you are most likely to want to change.
- * =========================================================================== */
-
-/** Cineplex internal film id for "The Odyssey". */
-const FILM_ID = "37617";
-
-/** Experience filter passed to the API. */
-const EXPERIENCES = "70mm";
-
-/**
- * Only dates STRICTLY LATER than this instant count as a detection.
- * Written with a trailing "Z" so it is unambiguously UTC. See the time zone
- * note above. A date exactly equal to this value does NOT trigger an alert.
- */
-const CUTOFF_ISO = "2026-09-16T00:00:00Z";
-
-/** How many failure notifications to trigger, in total, per detection. */
-const MAX_ALERTS = 10;
-
-/** Committed to the repository while an alert sequence is in progress. */
-const STATE_FILE = ".alert-state.json";
-
-/**
- * Public client-side Azure APIM key (see the long note above). Overridable
- * with a repository VARIABLE if Cineplex ever rotates it.
- */
-const PUBLIC_SUBSCRIPTION_KEY = "dcdac5601d864addbc2675a2e96cb1f8";
-
-/* --- Logging / safety limits ------------------------------------------- */
-
-/** Error response bodies are truncated to this many characters in the log. */
-const MAX_ERROR_BODY_CHARS = 1000;
-
-/** Successful response bodies are truncated to this many characters. */
-const MAX_SUCCESS_BODY_CHARS = 4000;
-
-/** Give up on the HTTP request after this long. */
-const REQUEST_TIMEOUT_MS = 30_000;
-
-/** Safety rail for the recursive extractor against absurdly nested JSON. */
-const MAX_RECURSION_DEPTH = 12;
 
 /* ===========================================================================
  * SMALL HELPERS
@@ -665,6 +704,10 @@ async function main() {
     setOutput("max_alerts", String(maximum));
     setOutput("dates", (existingState.dates ?? []).join(", "));
     setOutput("dates_count", String((existingState.dates ?? []).length));
+    // Report the cutoff that was in force when the detection happened, not the
+    // one configured right now - they differ if you edited CUTOFF_ISO
+    // mid-sequence, and the original is the honest number to show.
+    setOutput("cutoff", existingState.cutoff ?? CUTOFF_ISO);
     return;
   }
 
@@ -738,6 +781,7 @@ async function main() {
   setOutput("max_alerts", String(MAX_ALERTS));
   setOutput("dates", qualifyingValues.join(", "));
   setOutput("dates_count", String(qualifyingValues.length));
+  setOutput("cutoff", CUTOFF_ISO);
 }
 
 // Any error we did not anticipate still has to be an obvious technical failure
