@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# IMPORTANT: .alert-state.json is deliberately NOT listed here.
+#
+# That file IS the watcher's memory. The workflow has to be able to commit it,
+# so it must stay tracked by Git. If you ever add it to this file, every run
+# would look like alert number one and you would get failure emails forever.
+# ---------------------------------------------------------------------------
+
+# This project has no npm dependencies, but keep these ignored just in case
+# you ever experiment locally.
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-error.log*
+
+# Local environment files - nothing here needs secrets, but never commit these.
+.env
+.env.*
+
+# Editor and OS clutter
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and scratch output
+*.log

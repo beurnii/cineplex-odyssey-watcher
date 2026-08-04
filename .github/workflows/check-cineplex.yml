@@ -1,0 +1,205 @@
+name: Cineplex Odyssey 70mm watcher
+
+# ---------------------------------------------------------------------------
+# WHEN THIS RUNS
+# ---------------------------------------------------------------------------
+on:
+  schedule:
+    # Roughly every 15 minutes, deliberately offset from :00/:15/:30/:45.
+    # Those round times are the busiest moments on GitHub's scheduler, so runs
+    # queued then tend to start latest. GitHub cron is ALWAYS in UTC.
+    - cron: "7,22,37,52 * * * *"
+
+  # Lets you start a run yourself from the Actions tab at any time.
+  workflow_dispatch:
+    inputs:
+      force_alert:
+        description: "Send one test failure notification (does not touch real state)"
+        required: false
+        type: boolean
+        default: false
+
+# ---------------------------------------------------------------------------
+# PERMISSIONS
+# ---------------------------------------------------------------------------
+# `contents: write` lets the built-in GITHUB_TOKEN push .alert-state.json back
+# to the default branch. This alone is not enough: the repository itself must
+# also allow it, under
+#   Settings > Actions > General > Workflow permissions
+#     -> "Read and write permissions"
+# See the README if a push ever fails with HTTP 403.
+permissions:
+  contents: write
+
+# ---------------------------------------------------------------------------
+# CONCURRENCY
+# ---------------------------------------------------------------------------
+# The alert counter lives in a file in this repository, so two runs updating it
+# at the same time could lose an increment or collide on push. This group makes
+# runs queue up one behind the other instead.
+#
+# cancel-in-progress MUST stay false: cancelling a running job could kill it
+# between "write the file" and "push the file", which would replay the same
+# alert number forever.
+concurrency:
+  group: cineplex-odyssey-watcher
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check for new 70mm dates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # -------------------------------------------------------------------
+      # 1. Check out the repository
+      # -------------------------------------------------------------------
+      # `ref` is pinned to the default branch by name, not to the commit that
+      # happened to trigger this run. Because runs queue behind each other, a
+      # queued run's trigger commit can already be out of date by the time it
+      # starts, and reading a stale .alert-state.json would repeat an alert
+      # number. Asking for the branch by name always gets its current tip.
+      #
+      # fetch-depth: 0 gets full history so the rebase-and-retry below works.
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Show Node version
+        run: node --version
+
+      # -------------------------------------------------------------------
+      # 2. Run the checker
+      # -------------------------------------------------------------------
+      # This step decides what happens and writes .alert-state.json when an
+      # alert is due, but it NEVER fails on purpose. It exits non-zero only on
+      # a genuine technical problem, which stops the job right here - before
+      # anything is committed and without setting mode=alert.
+      - name: Run checker
+        id: check
+        env:
+          # Empty string on a scheduled run; "true" only when you tick the box.
+          FORCE_ALERT: ${{ inputs.force_alert }}
+          # Optional override, only needed if Cineplex rotates their public
+          # client-side key. Unset is fine and is the normal case.
+          CINEPLEX_SUBSCRIPTION_KEY: ${{ vars.CINEPLEX_SUBSCRIPTION_KEY }}
+        run: node check-cineplex.mjs
+
+      # -------------------------------------------------------------------
+      # 3. Commit the alert state - BEFORE any deliberate failure
+      # -------------------------------------------------------------------
+      # This ordering is the single most important part of the workflow. If the
+      # job failed before persisting the counter, every future run would reload
+      # the old number and behave like alert number one, forever.
+      #
+      # Note this step does NOT run for mode=test, so a forced test can never
+      # commit anything.
+      - name: Commit alert state
+        if: steps.check.outputs.mode == 'alert'
+        # Values are passed through `env:` rather than pasted straight into the
+        # script with ${{ }}. These particular values cannot contain anything
+        # dangerous, but keeping data out of the script text is the habit that
+        # prevents script-injection bugs in general.
+        env:
+          ALERT_NUMBER: ${{ steps.check.outputs.alert_number }}
+          MAX_ALERTS: ${{ steps.check.outputs.max_alerts }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .alert-state.json
+
+          # Committing with nothing staged is an error, and "nothing changed"
+          # is a perfectly normal outcome. Check before committing.
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Odyssey watcher: alert ${ALERT_NUMBER} of ${MAX_ALERTS}"
+
+          # Retry the push in case the branch moved while we were working (for
+          # example you edited the README from the website mid-run).
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${BRANCH}"; then
+              echo "Pushed .alert-state.json to ${BRANCH}."
+              exit 0
+            fi
+            echo "Push attempt ${attempt} failed; rebasing onto the latest ${BRANCH} and retrying."
+            git fetch origin "${BRANCH}"
+            if ! git rebase "origin/${BRANCH}"; then
+              git rebase --abort || true
+              echo "::error title=Odyssey watcher TECHNICAL FAILURE::Could not rebase .alert-state.json onto ${BRANCH}. Resolve the conflict by hand, or delete .alert-state.json to reset the watcher."
+              exit 1
+            fi
+          done
+
+          echo "::error title=Odyssey watcher TECHNICAL FAILURE::Could not push .alert-state.json after 3 attempts. Check Settings > Actions > General > Workflow permissions is set to 'Read and write permissions', and that branch protection is not blocking github-actions[bot]."
+          exit 1
+
+      # -------------------------------------------------------------------
+      # 4a. Deliberate failure for a REAL detection
+      # -------------------------------------------------------------------
+      # This step has no `always()`, so GitHub only runs it when every earlier
+      # step succeeded. That is exactly what we want: if the commit failed, the
+      # job still fails, but it fails as a technical error rather than pretending
+      # an alert was recorded.
+      - name: Trigger alert notification (real detection)
+        if: steps.check.outputs.mode == 'alert'
+        env:
+          ALERT_NUMBER: ${{ steps.check.outputs.alert_number }}
+          MAX_ALERTS: ${{ steps.check.outputs.max_alerts }}
+          DATES: ${{ steps.check.outputs.dates }}
+          DATES_COUNT: ${{ steps.check.outputs.dates_count }}
+        run: |
+          echo "==================================================================="
+          echo " CINEPLEX ODYSSEY 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
+          echo "==================================================================="
+          echo "Cutoff (UTC):     2026-09-16T00:00:00Z"
+          echo "Qualifying dates: ${DATES}"
+          echo "How many:         ${DATES_COUNT}"
+          echo ""
+          echo "Book here: https://www.cineplex.com/movie/the-odyssey"
+          echo ""
+          echo "This workflow is now failing ON PURPOSE. That is how it emails you."
+          echo "It is not a bug and nothing is broken."
+          echo ""
+          echo "::error title=Cineplex Odyssey 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than 2026-09-16T00:00:00Z: ${DATES}"
+          exit 1
+
+      # -------------------------------------------------------------------
+      # 4b. Deliberate failure for a FORCED TEST
+      # -------------------------------------------------------------------
+      - name: Trigger test notification (drill only)
+        if: steps.check.outputs.mode == 'test'
+        run: |
+          echo "==================================================================="
+          echo " TEST ALERT - THIS IS A DRILL"
+          echo "==================================================================="
+          echo "No Cineplex date was found. Nothing was committed."
+          echo "The real alert counter was not changed and the watcher is unaffected."
+          echo ""
+          echo "::error title=TEST ALERT (drill, not a real Odyssey date)::Forced test notification. No qualifying date was found and no state was changed."
+          exit 1
+
+      # -------------------------------------------------------------------
+      # 5. Successful outcomes
+      # -------------------------------------------------------------------
+      - name: Report success
+        if: steps.check.outputs.mode == 'none' || steps.check.outputs.mode == 'exhausted'
+        env:
+          MODE: ${{ steps.check.outputs.mode }}
+          MAX_ALERTS: ${{ steps.check.outputs.max_alerts }}
+        run: |
+          if [ "${MODE}" = "exhausted" ]; then
+            echo "All ${MAX_ALERTS} notifications have already been triggered."
+            echo "Delete .alert-state.json from the repository to reset the watcher."
+          else
+            echo "No qualifying dates. Watcher is healthy and will check again shortly."
+          fi
