@@ -1,7 +1,7 @@
 {
   "detectedAt": "2026-08-04T03:17:07.211Z",
-  "lastAlertAt": "2026-08-04T03:17:07.211Z",
-  "alertsSent": 1,
+  "lastAlertAt": "2026-08-04T03:54:39.980Z",
+  "alertsSent": 2,
   "maximumAlerts": 10,
   "dates": [
     "2026-09-16T00:00:00"
