@@ -99,7 +99,7 @@ emailed forever.
 |---|---|
 | API endpoint | `https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable` |
 | Film ID | `37617` (The Odyssey) |
-| Experience filter | `70mm` |
+| Experience filter | `imax-70mm` (IMAX 70mm, 15-perf) |
 | Cutoff | `2026-09-16T00:00:00Z` (UTC) — ⚠️ **temporarily set to `2026-09-15T00:00:00Z` for testing**, see below |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
 | Schedule | `7,22,37,52 * * * *` — four times an hour, UTC |
@@ -112,7 +112,7 @@ emailed forever.
 The full request is:
 
 ```text
-https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37617&experiences=70mm
+https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37617&experiences=imax-70mm
 ```
 
 which currently returns a plain list of dates:
@@ -132,14 +132,23 @@ Two observations about that response, both of which shaped the code:
    cutoff.** This is why the comparison must be strictly greater-than. A
    `>=` comparison would fire immediately and burn all ten alerts on day one.
 
-> **Note on the `experiences=70mm` filter.** At the time of writing, the API
-> returns the same list of dates with `experiences=70mm`, with `experiences=imax`,
-> and with no filter at all — though a nonsense value like `experiences=NOTREAL`
-> correctly returns `[]`. So the filter is being validated by the server but is
-> not currently narrowing the dates. In practice this watcher tells you
-> "new bookable dates opened for The Odyssey", which is what you actually want
-> to know. Once you get an alert, check the Cineplex site to confirm the 70mm
-> showtimes specifically.
+> **Note on the experience filter.** `imax-70mm` means **IMAX 70mm** (15-perf) —
+> the premium format. It is not the same as `70mm`, which also matches plain
+> 5-perf 70mm prints. Both formats really are showing this film: on 2026-08-04
+> the API reported 32 sessions tagged `["IMAX","70mm"]` across 8 theatres, plus
+> 14 sessions tagged only `["70mm"]` at 4 other theatres.
+>
+> On the `dates/bookable` endpoint specifically, `imax-70mm`, `70mm` and `imax`
+> currently return an **identical** list of 45 dates, because the film happens
+> to play in IMAX 70mm on every day of its run. Using `imax-70mm` still matters:
+> if Cineplex ever opens plain-70mm dates without IMAX 70mm, the correct filter
+> is what stops you being alerted for the wrong format.
+>
+> **The value is case-sensitive and fails silently.** `IMAX`, `70MM`,
+> `IMAX 70mm` and `imax70mm` all return HTTP 200 with `[]` rather than an error
+> — which is indistinguishable from "this film has finished its run", and would
+> mean the watcher never alerts. The checker prints a loud warning whenever the
+> list comes back empty, for exactly this reason.
 
 ---
 

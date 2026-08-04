@@ -51,8 +51,28 @@ const MAX_ALERTS = 10;
 /** Cineplex internal film id for "The Odyssey". */
 const FILM_ID = "37617";
 
-/** Experience filter passed to the API. */
-const EXPERIENCES = "70mm";
+/**
+ * Experience filter passed to the API. THIS VALUE IS CASE-SENSITIVE.
+ *
+ * "imax-70mm" is IMAX 70mm (15-perf), which is the premium format worth
+ * queueing for. It is NOT the same thing as "70mm", which also matches plain
+ * 5-perf 70mm prints. Both are real, and for this film they are genuinely
+ * different showings: on 2026-08-04 the API reports 32 sessions tagged
+ * ["IMAX","70mm"] across 8 theatres, plus 14 sessions tagged only ["70mm"]
+ * at 4 other theatres.
+ *
+ * Known-good values seen on this endpoint:
+ *   imax-70mm   IMAX 70mm
+ *   70mm        any 70mm, including IMAX 70mm
+ *   imax        any IMAX, including digital IMAX
+ *   vip, dbox, ultraavx, ...
+ *
+ * Case matters: "IMAX", "70MM" and "IMAX 70mm" all silently return an empty
+ * list rather than an error, which would look exactly like "no dates" forever.
+ * If you change this, confirm the value still returns dates by opening the URL
+ * printed in the workflow log.
+ */
+const EXPERIENCES = "imax-70mm";
 
 /* ===========================================================================
  * Internal constants - you should not normally need to touch these.
@@ -511,6 +531,16 @@ async function fetchBookableDates() {
   if (candidates.length === 0) {
     if (Array.isArray(payload) && payload.length === 0) {
       console.log("API returned an empty list: no bookable dates at all right now.");
+      // An empty list is legitimate when a film has finished its run, so this
+      // is not an error. But it is ALSO exactly what a mistyped experience
+      // filter returns - the API answers HTTP 200 with [] rather than
+      // complaining - and that would look like "no dates" forever. Say so
+      // loudly, because a silently mis-configured watcher is the worst
+      // outcome here.
+      console.log("");
+      console.log(`::warning title=Odyssey watcher::No bookable dates returned for experiences="${EXPERIENCES}". ` +
+        `That is normal once a film finishes its run, but it is also what an invalid experience filter returns. ` +
+        `The filter is case-sensitive ("IMAX" and "70MM" both return nothing). Open the request URL above to check.`);
       return [];
     }
     failTechnical(
