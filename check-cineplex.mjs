@@ -89,6 +89,16 @@ const LOCATION_ID = "9406";
  */
 const EXPERIENCES = "imax-70mm";
 
+/**
+ * Used only to build the "buy tickets" links that appear in the alert.
+ *
+ * FILM_SLUG is the film's page name on cineplex.com: the "the-odyssey" in
+ * https://www.cineplex.com/movie/the-odyssey. THEATRE_NAME is cosmetic - it is
+ * just what the alert calls your cinema.
+ */
+const FILM_SLUG = "the-odyssey";
+const THEATRE_NAME = "Cinéma Banque Scotia Montréal";
+
 /* ===========================================================================
  * Internal constants - you should not normally need to touch these.
  * =========================================================================== */
@@ -257,6 +267,59 @@ function failTechnical(title, details) {
   setOutput("mode", "error");
   addSummary(`## Odyssey watcher: technical failure\n\n**${title}**\n\nThis is *not* a date alert.`);
   process.exit(1);
+}
+
+/* ===========================================================================
+ * BOOKING LINKS
+ * =========================================================================== */
+
+/**
+ * Build a cineplex.com link that opens straight on the showtimes for one date
+ * at your cinema, so the alert is one click away from buying a ticket.
+ *
+ * The date must be formatted M/D/YYYY - that is the format cineplex.com's own
+ * site uses in its URLs. The parts are read in UTC to match how the rest of
+ * this script interprets the API's zoneless timestamps.
+ */
+function bookingUrl(isoDate) {
+  const url = new URL(`https://www.cineplex.com/movie/${FILM_SLUG}`);
+  if (LOCATION_ID) url.searchParams.set("locationId", LOCATION_ID);
+  const millis = toUtcMillis(isoDate);
+  if (millis !== null) {
+    const d = new Date(millis);
+    url.searchParams.set("date", `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`);
+  }
+  return url.toString();
+}
+
+/**
+ * Rich Markdown shown on the workflow run's Summary page.
+ *
+ * This matters because GitHub writes the failure EMAIL itself and we cannot put
+ * anything inside it. What we can control is where its "View results" link
+ * lands, so the run page is made to open with a big obvious booking link.
+ */
+function alertSummary(alertNumber, maximum, dates, cutoff) {
+  const rows = dates
+    .map((d) => `| **${d.slice(0, 10)}** | [🎟 Buy tickets →](${bookingUrl(d)}) |`)
+    .join("\n");
+  return [
+    `# 🎟 New IMAX 70mm date for The Odyssey`,
+    ``,
+    `**${THEATRE_NAME}** has opened ${dates.length} bookable date(s) later than \`${cutoff}\`.`,
+    ``,
+    `| Date | Book |`,
+    `|---|---|`,
+    rows,
+    ``,
+    `All showtimes: [${THEATRE_NAME}](${bookingUrl(dates[0])})`,
+    ``,
+    `---`,
+    ``,
+    `Alert **${alertNumber} of ${maximum}**. This run failed on purpose - that is how it emailed you.`,
+    `Nothing is broken. It stops by itself after ${maximum} alerts.`,
+    ``,
+  ].join("\n");
 }
 
 /* ===========================================================================
@@ -749,10 +812,16 @@ async function main() {
     console.log("=".repeat(70));
     console.log(`SENDING ALERT ${alertNumber} OF ${maximum}`);
     console.log("=".repeat(70));
+    const seqDates = existingState.dates ?? [];
+    const seqCutoff = existingState.cutoff ?? CUTOFF_ISO;
     console.log("Qualifying dates from the original detection:");
-    for (const date of existingState.dates ?? []) console.log(`  - ${date}`);
+    for (const date of seqDates) console.log(`  - ${date}   ${bookingUrl(date)}`);
     console.log("");
     console.log(`${STATE_FILE} updated. The workflow will commit it, then fail on purpose.`);
+    if (seqDates.length > 0) {
+      addSummary(alertSummary(alertNumber, maximum, seqDates, seqCutoff));
+      setOutput("booking_url", bookingUrl(seqDates[0]));
+    }
 
     setOutput("mode", "alert");
     setOutput("alert_number", String(alertNumber));
@@ -810,7 +879,7 @@ async function main() {
   console.log("NEW DATES DETECTED!");
   console.log("=".repeat(70));
   console.log(`${qualifying.length} bookable date(s) are later than ${CUTOFF_ISO}:`);
-  for (const value of qualifyingValues) console.log(`  - ${value}`);
+  for (const value of qualifyingValues) console.log(`  - ${value}   ${bookingUrl(value)}`);
   console.log("");
 
   const state = {
@@ -819,6 +888,7 @@ async function main() {
     alertsSent: 1, // this run IS alert number 1 - it is not counted again later
     maximumAlerts: MAX_ALERTS,
     dates: qualifyingValues,
+    bookingUrls: qualifyingValues.map(bookingUrl),
     cutoff: CUTOFF_ISO,
     filmId: FILM_ID,
     locationId: LOCATION_ID,
@@ -838,6 +908,8 @@ async function main() {
   setOutput("dates", qualifyingValues.join(", "));
   setOutput("dates_count", String(qualifyingValues.length));
   setOutput("cutoff", CUTOFF_ISO);
+  setOutput("booking_url", bookingUrl(qualifyingValues[0]));
+  addSummary(alertSummary(1, MAX_ALERTS, qualifyingValues, CUTOFF_ISO));
 }
 
 // Any error we did not anticipate still has to be an obvious technical failure

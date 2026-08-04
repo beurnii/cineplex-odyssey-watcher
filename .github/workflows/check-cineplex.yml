@@ -160,20 +160,25 @@ jobs:
           # Reported by the checker rather than written here, so the cutoff can
           # never drift out of sync with the one actually used to compare.
           CUTOFF: ${{ steps.check.outputs.cutoff }}
+          BOOKING_URL: ${{ steps.check.outputs.booking_url }}
         run: |
           echo "==================================================================="
-          echo " CINEPLEX ODYSSEY 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
+          echo " CINEPLEX ODYSSEY IMAX 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
           echo "==================================================================="
           echo "Cutoff (UTC):     ${CUTOFF}"
           echo "Qualifying dates: ${DATES}"
           echo "How many:         ${DATES_COUNT}"
           echo ""
-          echo "Book here: https://www.cineplex.com/movie/the-odyssey"
+          echo "  >>> BUY TICKETS: ${BOOKING_URL}"
           echo ""
           echo "This workflow is now failing ON PURPOSE. That is how it emails you."
           echo "It is not a bug and nothing is broken."
           echo ""
-          echo "::error title=Cineplex Odyssey 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than ${CUTOFF}: ${DATES}"
+          # The booking link goes in the annotation too. GitHub writes the
+          # failure email itself and we cannot put anything inside it, but the
+          # annotation is the first thing on the run page that the email's
+          # "View results" link opens, and the Summary tab has a clickable one.
+          echo "::error title=Cineplex Odyssey IMAX 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than ${CUTOFF}: ${DATES}. BUY TICKETS: ${BOOKING_URL}"
           exit 1
 
       # -------------------------------------------------------------------
